@@ -1,0 +1,7 @@
+name: "LIFX (local)"
+packageKey: "stoeckie-lifx-local"
+description: "Local control of LIFX bulbs over the LIFX LAN protocol, directly from the hub: no cloud. Confirmed state, retries, offline only after 2 minutes."
+vendorSupportInformation: "https://github.com/Stoeckie"
+permissions:
+  lan: {}
+  discovery: {}

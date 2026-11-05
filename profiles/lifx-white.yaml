@@ -1,0 +1,45 @@
+name: stoeckie-lifx-white
+components:
+  - id: main
+    capabilities:
+      - id: switch
+        version: 1
+      - id: switchLevel
+        version: 1
+      - id: colorTemperature
+        version: 1
+      - id: silvervalley08660.connectionStatus
+        version: 1
+      - id: silvervalley08660.connectionLog
+        version: 1
+      - id: refresh
+        version: 1
+    categories:
+      - name: Light
+preferences:
+  - name: transitionMs
+    title: Transition (ms)
+    description: Fade time for on, off, level and color changes. 0 = instant.
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 0
+      maximum: 10000
+      default: 0
+  - name: pollSeconds
+    title: Poll interval (s)
+    description: How often the hub reads the bulb's real state.
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 10
+      maximum: 600
+      default: 30
+  - name: ipAddress
+    title: Bulb IP (optional)
+    description: Leave on "auto" (found on the network by its MAC address). Set a fixed IP only when discovery fails.
+    required: false
+    preferenceType: string
+    definition:
+      stringType: text
+      default: "auto"
