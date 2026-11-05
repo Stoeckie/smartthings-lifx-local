@@ -21,7 +21,7 @@ The LIFX cloud integration depends on each bulb keeping its cloud connection. Ol
 | Bulb IP | auto | only set a fixed IP when discovery fails |
 
 ## Install
-1. Enroll your hub in the channel (invite link in the forum post) and install **LIFX (local)**.
+1. Enroll your hub in the channel (invite: https://bestow-regional.api.smartthings.com/invite/qWjBdybRNG2y) and install **LIFX (local)**.
 2. *Add device → Scan nearby*. All bulbs on the same subnet as the hub appear with their LIFX names.
 3. Move your routines to the new devices, then remove the old LIFX cloud devices / unlink the LIFX cloud service.
 
@@ -31,5 +31,7 @@ Hub and bulbs must be in the same subnet (discovery uses broadcast / a /24 sweep
 - Protocol: https://lan.developer.lifx.com (UDP 56700).
 - Tested on a SmartThings v3 hub with 17 LIFX Original 1000 bulbs.
 - Color commands also switch the bulb on unless the command says `switch: off`.
+
+Forum: https://community.smartthings.com/t/311970
 
 MIT licence.
