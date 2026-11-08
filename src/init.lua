@@ -10,8 +10,9 @@ local capabilities = require "st.capabilities"
 local log = require "log"
 local cosock = require "cosock"
 local lifx = require "lifx"
+local emitq = require "emitq"  -- only changed values go to the hub (see emitq.lua)
 
-local BUILD = "2026-11-08a"
+local BUILD = "2026-11-09a"
 local CONN_GRACE = 300
 local function conn_grace(dev)
   -- setting "Offline after (minutes)": a router or network update at night takes a few minutes
@@ -107,13 +108,11 @@ end
 local function pct(v) return math.floor(v * 100 / 65535 + 0.5) end
 local function raw(p) return math.floor(math.max(0, math.min(100, p)) * 65535 / 100 + 0.5) end
 
+-- force (a manual refresh): everything goes out again, with state_change, so the app catches up
 local function emit_state(dev, st, force)
   local on = st.power > 0
   local lvl = math.max(1, pct(st.bri))
-  local sig = string.format("%s/%d/%d/%d/%d", tostring(on), lvl, st.hue, st.sat, st.kelvin)
-  if not force and sig == dev:get_field("sig") then return end
-  dev:set_field("sig", sig)
-  local function try(ev) pcall(function() dev:emit_event(ev) end) end
+  local function try(ev) emitq.try(dev, ev, nil, force) end
   try(on and switch.switch.on() or switch.switch.off())
   try(level.level(lvl))
   if dev:supports_capability(color) then
@@ -190,7 +189,19 @@ local function current(driver, dev)
 end
 
 local function near(a, b) return math.abs(a - b) <= 700 or math.abs(a - b) >= 65535 - 700 end
+-- the app sends the shown value again when a slider or list is opened and closed without a change: a color or
+-- level the bulb already has (and it is on, when the command would switch it on) is not sent
+local function same_as_now(dev, st, power_on)
+  local cur = dev:get_field("state")
+  if not cur then return false end
+  if power_on and cur.power == 0 then return false end
+  return near(cur.bri, st.bri) and near(cur.hue, st.hue) and math.abs(cur.sat - st.sat) <= 700 and cur.kelvin == st.kelvin
+end
 local function set_color(driver, dev, st, power_on)
+  if same_as_now(dev, st, power_on) then
+    log.info("[lifx] " .. dev.label .. ": already in that state, nothing sent")
+    return true
+  end
   local dur = pref(dev, "transitionMs", 0)
   local ok = send(driver, dev, lifx.T.LightSetColor, lifx.set_color(st, dur), function(r)
     return near(r.bri, st.bri) and (st.sat == 0 or near(r.hue, st.hue)) and math.abs(r.sat - st.sat) <= 700
@@ -281,6 +292,7 @@ local function info_changed(driver, dev, _, args)
 end
 
 local function device_removed(_, dev)
+  emitq.forget(dev)
   local t = dev:get_field("poll_timer")
   if t then pcall(function() dev.thread:cancel_timer(t) end) end
 end

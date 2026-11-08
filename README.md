@@ -30,7 +30,8 @@ Hub and bulbs must be in the same subnet (discovery uses broadcast / a /24 sweep
 ## Notes
 - Protocol: https://lan.developer.lifx.com (UDP 56700).
 - Tested on a SmartThings v3 hub with 17 LIFX Original 1000 bulbs.
-- Color commands also switch the bulb on unless the command says `switch: off`.
+- Color commands also switch the bulb on unless the command says `switch: off`. A color, level or color temperature the bulb already has is not sent again (the app re-sends the shown value when a slider is opened and closed).
+- Events: a value only goes to the hub when it changed; after a driver start, and on Refresh, every value is sent once so the app catches up.
 
 Forum: https://community.smartthings.com/t/311970
 
