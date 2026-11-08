@@ -9,7 +9,7 @@ The LIFX cloud integration depends on each bulb keeping its cloud connection. Ol
 - **Discovery**: *Add device → Scan nearby*. GetService broadcast plus a unicast sweep of the hub's /24, two rounds. Bulbs are keyed by MAC address, so a new IP is picked up automatically.
 - **Confirmed state**: SmartThings only shows what the bulb itself reports. Every command is sent with acknowledgement (3 tries), then the real state is read back (and read again if the bulb has not applied it yet).
 - **Polling**: real state every 30 s (setting), so changes from the LIFX app or a wall switch show up.
-- **No false offline**: a bulb is only marked offline after 2 minutes without any answer. Short drops are remembered and shown as *Last drop* when it is back.
+- **No false offline**: a bulb is only marked offline after **Offline after (minutes)** without any answer (setting, default 5). Short drops are remembered and shown as *Last drop* when it is back.
 - **Capabilities**: switch, level, color (hue/saturation), color temperature (1500–9000 K), refresh, connection status (usable in routines, e.g. "notify when a bulb goes offline").
 - White‑only LIFX models get a profile without color.
 

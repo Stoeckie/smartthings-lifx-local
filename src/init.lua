@@ -11,8 +11,14 @@ local log = require "log"
 local cosock = require "cosock"
 local lifx = require "lifx"
 
-local BUILD = "2026-11-05b"
-local CONN_GRACE = 120
+local BUILD = "2026-11-08a"
+local CONN_GRACE = 300
+local function conn_grace(dev)
+  -- setting "Offline after (minutes)": a router or network update at night takes a few minutes
+  local m = tonumber(dev.preferences and dev.preferences.offlineAfter)
+  if m and m >= 1 then return math.floor(m * 60) end
+  return CONN_GRACE
+end
 local RESCAN_MIN = 60 -- at most one network scan per minute when bulbs are missing
 
 local switch, level = capabilities.switch, capabilities.switchLevel
@@ -114,7 +120,7 @@ local function emit_state(dev, st, force)
     try(color.hue(pct(st.hue)))
     try(color.saturation(pct(st.sat)))
   end
-  try(ctemp.colorTemperature(math.max(1, st.kelvin)))
+  try(ctemp.colorTemperature({ value = math.max(1, st.kelvin), unit = "K" }))
 end
 
 local function mark_ok(dev)
@@ -135,7 +141,7 @@ local function mark_fail(driver, dev, reason)
     end
   end
   if address(dev) == nil or os.time() - since >= 10 then rescan(driver) end
-  if os.time() - since >= CONN_GRACE and dev:get_field("is_offline") ~= true then
+  if os.time() - since >= conn_grace(dev) and dev:get_field("is_offline") ~= true then
     log.warn(string.format("[lifx] %s: no answer for %d s (%s), offline", dev.label, os.time() - since, tostring(reason)))
     dev:offline(); dev:set_field("is_offline", true)
     emit_conn(dev, "offline")
@@ -262,7 +268,7 @@ end
 local function device_added(driver, dev)
   local info = discovered[dev.device_network_id]
   if info and info.ip then dev:set_field("ip", info.ip, { persist = true }) end
-  pcall(function() dev:emit_event(ctemp.colorTemperatureRange({ value = { minimum = 1500, maximum = 9000 } })) end)
+  pcall(function() dev:emit_event(ctemp.colorTemperatureRange({ value = { minimum = 1500, maximum = 9000 }, unit = "K" })) end)
   device_init(driver, dev)
 end
 
