@@ -12,7 +12,7 @@ local cosock = require "cosock"
 local lifx = require "lifx"
 local emitq = require "emitq"  -- only changed values go to the hub (see emitq.lua)
 
-local BUILD = "2026-11-09a"
+local BUILD = "2026-11-09b"
 local CONN_GRACE = 300
 local function conn_grace(dev)
   -- setting "Offline after (minutes)": a router or network update at night takes a few minutes
@@ -108,7 +108,8 @@ end
 local function pct(v) return math.floor(v * 100 / 65535 + 0.5) end
 local function raw(p) return math.floor(math.max(0, math.min(100, p)) * 65535 / 100 + 0.5) end
 
--- force (a manual refresh): everything goes out again, with state_change, so the app catches up
+-- force: everything goes out again with state_change. Refresh does NOT use it: a forced
+-- switch event runs "light turned on/off" routines on every pull-to-refresh.
 local function emit_state(dev, st, force)
   local on = st.power > 0
   local lvl = math.max(1, pct(st.bri))
@@ -256,7 +257,8 @@ local function handle_ctemp(driver, dev, cmd)
 end
 
 local function handle_refresh(driver, dev)
-  if not read(driver, dev, true) then rescan(driver, true); read(driver, dev, true) end
+  -- no force: only real changes are emitted, so routines do not fire on a refresh
+  if not read(driver, dev) then rescan(driver, true); read(driver, dev) end
 end
 
 -- lifecycle ----------------------------------------------------------------------------------
