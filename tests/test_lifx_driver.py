@@ -153,7 +153,8 @@ def test_level_switches_a_bulb_that_is_off_on_also_when_packets_get_lost():
 
 LIMIT = r'''
 CLOCK = 0
-OPEN, MAXOPEN = 0, 0
+OPEN, MAXOPEN, STARTS = 0, 0, {}
+function MINGAP() local g = 99; for i = 2, #STARTS do g = math.min(g, STARTS[i] - STARTS[i - 1]) end; return g end
 local function wait(s) local untl = CLOCK + s; while CLOCK < untl do coroutine.yield() end end
 package.loaded["cosock"] = { socket = {
   gettime = function() return CLOCK end,
@@ -190,13 +191,14 @@ def test_at_most_four_exchanges_at_once():
     assert most == 4          # 17 bulbs commanded at once: never more than 4 sockets open
     assert left == 0          # every slot is given back
     assert took < 5           # 17 x 0.8 s in groups of 4: about 3.6 s
+    assert lua.eval('MINGAP()') >= 0.059   # never two starts in the same instant
 
 
 def test_a_stuck_count_never_blocks_a_lamp():
     lua = lua53.LuaRuntime(unpack_returned_tuples=True)
     lua.execute(f'package.path = "{SRC}/?.lua;" .. package.path')
     lua.execute(LIMIT)
-    lua.execute('for i = 1, 4 do lifx.acquire() end')    # four slots taken and never given back
+    lua.execute('for i = 1, 4 do lifx.acquire(); CLOCK = CLOCK + 1 end')    # four slots taken and never given back
     waited = lua.eval('(function() local w; local co = coroutine.create(function() w = lifx.acquire() end); '
                       'while coroutine.status(co) ~= "dead" do assert(coroutine.resume(co)); CLOCK = CLOCK + 0.05 end; return w end)()')
     assert 4.9 <= waited <= 5.1

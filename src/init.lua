@@ -13,7 +13,7 @@ local cosock = require "cosock"
 local lifx = require "lifx"
 local emitq = require "emitq"  -- only changed values go to the hub (see emitq.lua)
 
-local BUILD = "2026-11-17b"
+local BUILD = "2026-11-17c"
 local CONN_GRACE = 300
 local function conn_grace(dev)
   -- setting "Offline after (minutes)": a router or network update at night takes a few minutes

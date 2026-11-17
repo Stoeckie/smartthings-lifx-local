@@ -71,16 +71,18 @@ end
 -- bulbs started 17 exchanges in the same instant, and about half of them got no answer at all for some
 -- seconds, every routine (17-11-2026), while the same 17 at once from a laptop all answered within 0.15 s.
 -- An exchange waits for a free slot (cosock runs one coroutine at a time, so counting is safe); after
--- MAX_WAIT seconds it goes anyway, so a stuck count can never stop the lamps.
-M.MAX_PARALLEL, M.MAX_WAIT = 4, 5
-local active = 0
+-- MAX_WAIT seconds it goes anyway, so a stuck count can never stop the lamps. New exchanges also start at
+-- least MIN_GAP apart, so a group of 17 is spread over about a second instead of leaving in one burst.
+M.MAX_PARALLEL, M.MAX_WAIT, M.MIN_GAP = 4, 5, 0.06
+local active, last_start = 0, -math.huge
 function M.acquire()
   local waited = 0
-  while active >= M.MAX_PARALLEL and waited < M.MAX_WAIT do
-    socket.sleep(0.05)
-    waited = waited + 0.05
+  while (active >= M.MAX_PARALLEL or socket.gettime() - last_start < M.MIN_GAP) and waited < M.MAX_WAIT do
+    socket.sleep(0.02)
+    waited = waited + 0.02
   end
   active = active + 1
+  last_start = socket.gettime()
   return waited
 end
 function M.release() active = math.max(0, active - 1) end
