@@ -13,7 +13,7 @@ local cosock = require "cosock"
 local lifx = require "lifx"
 local emitq = require "emitq"  -- only changed values go to the hub (see emitq.lua)
 
-local BUILD = "2026-11-17a"
+local BUILD = "2026-11-17b"
 local CONN_GRACE = 300
 local function conn_grace(dev)
   -- setting "Offline after (minutes)": a router or network update at night takes a few minutes
@@ -178,6 +178,7 @@ local function send(driver, dev, msg_type, payload, expect)
   if not address(dev) then mark_fail(driver, dev, "no address"); return false end
   local dur = math.min(pref(dev, "transitionMs", 0), 3000) / 1000
   local acked, done = false, false
+  local t0, busy0 = cosock.socket.gettime(), lifx.in_flight()
   for try = 1, #RETRY_WAITS + 1 do
     local ip = address(dev) -- a rescan after a failure may have found the bulb at a new address
     acked = ip ~= nil and lifx.request(ip, mac, msg_type, payload, lifx.T.Acknowledgement) ~= nil
@@ -189,12 +190,16 @@ local function send(driver, dev, msg_type, payload, expect)
     end
     done = st ~= nil and (not expect or expect(st))
     if done then
-      if try > 1 then log.info(string.format("[lifx] %s: command %d done at try %d", dev.label, msg_type, try)) end
+      if try > 1 then
+        log.info(string.format("[lifx] %s: command %d done at try %d after %.1f s", dev.label, msg_type, try,
+          cosock.socket.gettime() - t0))
+      end
       break
     end
-    log.warn(string.format("[lifx] %s: command %d %s (try %d of %d)", dev.label, msg_type,
+    log.warn(string.format("[lifx] %s: command %d %s (try %d of %d, %.1f s, %d exchanges busy at the start)",
+      dev.label, msg_type,
       st and (acked and "acknowledged but not applied" or "not acknowledged and not applied") or "not answered",
-      try, #RETRY_WAITS + 1))
+      try, #RETRY_WAITS + 1, cosock.socket.gettime() - t0, busy0))
     if try <= #RETRY_WAITS then cosock.socket.sleep(RETRY_WAITS[try]) end
   end
   return done

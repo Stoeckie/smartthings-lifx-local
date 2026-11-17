@@ -149,3 +149,54 @@ def test_level_switches_a_bulb_that_is_off_on_also_when_packets_get_lost():
     g.LEVEL(60)
     assert lua.eval('BULB.power') == 65535 and g.SHOWN("cap.switchLevel.level") == 60
     assert lua.eval('BULB.commands') == 4               # color twice lost and sent again, then power
+
+
+LIMIT = r'''
+CLOCK = 0
+OPEN, MAXOPEN = 0, 0
+local function wait(s) local untl = CLOCK + s; while CLOCK < untl do coroutine.yield() end end
+package.loaded["cosock"] = { socket = {
+  gettime = function() return CLOCK end,
+  sleep = wait,
+  udp = function()
+    OPEN = OPEN + 1; if OPEN > MAXOPEN then MAXOPEN = OPEN end
+    return { setsockname = function() end, sendto = function() return true end,
+             settimeout = function(self, t) self.t = t end,
+             receivefrom = function(self) wait(self.t); return nil end,   -- a bulb that never answers
+             close = function() OPEN = OPEN - 1 end }
+  end } }
+package.loaded["lifx"] = nil
+lifx = require "lifx"
+function RUN(n)
+  local cos, done = {}, 0
+  for i = 1, n do cos[i] = coroutine.create(function() lifx.request("192.168.2." .. i, nil, 101, "", 107, 0.8, 1) end) end
+  while done < n do
+    done = 0
+    for i = 1, n do
+      if coroutine.status(cos[i]) ~= "dead" then assert(coroutine.resume(cos[i])) else done = done + 1 end
+    end
+    CLOCK = CLOCK + 0.05
+  end
+  return MAXOPEN, lifx.in_flight(), CLOCK
+end
+'''
+
+
+def test_at_most_four_exchanges_at_once():
+    lua = lua53.LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(f'package.path = "{SRC}/?.lua;" .. package.path')
+    lua.execute(LIMIT)
+    most, left, took = lua.eval('RUN(17)')
+    assert most == 4          # 17 bulbs commanded at once: never more than 4 sockets open
+    assert left == 0          # every slot is given back
+    assert took < 5           # 17 x 0.8 s in groups of 4: about 3.6 s
+
+
+def test_a_stuck_count_never_blocks_a_lamp():
+    lua = lua53.LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(f'package.path = "{SRC}/?.lua;" .. package.path')
+    lua.execute(LIMIT)
+    lua.execute('for i = 1, 4 do lifx.acquire() end')    # four slots taken and never given back
+    waited = lua.eval('(function() local w; local co = coroutine.create(function() w = lifx.acquire() end); '
+                      'while coroutine.status(co) ~= "dead" do assert(coroutine.resume(co)); CLOCK = CLOCK + 0.05 end; return w end)()')
+    assert 4.9 <= waited <= 5.1

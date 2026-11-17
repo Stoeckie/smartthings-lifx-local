@@ -67,26 +67,50 @@ function M.version(payload)
   return { vendor = vendor, product = product }
 end
 
+-- At most MAX_PARALLEL exchanges at the same moment, for all bulbs together. A routine that commands 17
+-- bulbs started 17 exchanges in the same instant, and about half of them got no answer at all for some
+-- seconds, every routine (17-11-2026), while the same 17 at once from a laptop all answered within 0.15 s.
+-- An exchange waits for a free slot (cosock runs one coroutine at a time, so counting is safe); after
+-- MAX_WAIT seconds it goes anyway, so a stuck count can never stop the lamps.
+M.MAX_PARALLEL, M.MAX_WAIT = 4, 5
+local active = 0
+function M.acquire()
+  local waited = 0
+  while active >= M.MAX_PARALLEL and waited < M.MAX_WAIT do
+    socket.sleep(0.05)
+    waited = waited + 0.05
+  end
+  active = active + 1
+  return waited
+end
+function M.release() active = math.max(0, active - 1) end
+function M.in_flight() return active end
+
 -- One request/reply exchange with a bulb. expect = reply type wanted (or Acknowledgement).
 -- Returns the parsed reply, or nil, "timeout".
 function M.request(ip, mac, msg_type, payload, expect, timeout, tries)
   timeout, tries = timeout or 0.8, tries or 3
   for _ = 1, tries do
-    local udp = socket.udp()
-    udp:setsockname("*", 0)
-    local pkt, s = M.packet(msg_type, payload, mac, expect == M.T.Acknowledgement, expect ~= M.T.Acknowledgement)
-    local sent = pcall(function() return udp:sendto(pkt, ip, M.PORT) end)
-    local deadline = socket.gettime() + timeout
-    while sent and socket.gettime() < deadline do
-      udp:settimeout(math.max(0.05, deadline - socket.gettime()))
-      local data = udp:receivefrom()
-      local m = data and M.parse(data)
-      if m and m.source == SOURCE and m.seq == s and m.type == expect and (not mac or m.mac == mac) then
-        udp:close()
-        return m
+    M.acquire()
+    local ok, m = pcall(function()
+      local udp = socket.udp()
+      udp:setsockname("*", 0)
+      local pkt, s = M.packet(msg_type, payload, mac, expect == M.T.Acknowledgement, expect ~= M.T.Acknowledgement)
+      local sent = pcall(function() return udp:sendto(pkt, ip, M.PORT) end)
+      local deadline = socket.gettime() + timeout
+      while sent and socket.gettime() < deadline do
+        udp:settimeout(math.max(0.05, deadline - socket.gettime()))
+        local data = udp:receivefrom()
+        local r = data and M.parse(data)
+        if r and r.source == SOURCE and r.seq == s and r.type == expect and (not mac or r.mac == mac) then
+          udp:close()
+          return r
+        end
       end
-    end
-    udp:close()
+      udp:close()
+    end)
+    M.release()
+    if ok and m then return m end
   end
   return nil, "timeout"
 end
