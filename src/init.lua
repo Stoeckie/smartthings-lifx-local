@@ -3,7 +3,8 @@
 --   discovery  GetService broadcast + sweep of the hub's /24, bulbs keyed by MAC (IP may change)
 --   state      read from the bulb (LightGet) every poll and after every command: SmartThings only
 --              shows what the bulb itself reports, never an assumed state
---   commands   sent with acknowledgement and retried (3 x 0.8 s), then confirmed with LightGet
+--   commands   sent with acknowledgement and retried (3 x 0.8 s), then confirmed with LightGet; when the
+--              bulb did not do it, the whole command is tried again after 1, 2 and 4 s
 --   offline    only after the bulb has not answered for CONN_GRACE seconds (no false alarms)
 local Driver = require "st.driver"
 local capabilities = require "st.capabilities"
@@ -12,7 +13,7 @@ local cosock = require "cosock"
 local lifx = require "lifx"
 local emitq = require "emitq"  -- only changed values go to the hub (see emitq.lua)
 
-local BUILD = "2026-11-09b"
+local BUILD = "2026-11-17a"
 local CONN_GRACE = 300
 local function conn_grace(dev)
   -- setting "Offline after (minutes)": a router or network update at night takes a few minutes
@@ -164,25 +165,39 @@ end
 -- Send a command with acknowledgement (retried), then read back what the bulb really did.
 -- A bulb acknowledges before it has applied the change, so the read-back waits a moment and is
 -- repeated once when the state does not match yet (expect = function(state) -> true when applied).
+--
+-- When the bulb did not do it, the whole command is tried again. A bulb that misses the packets (weak
+-- Wi-Fi, a routine that commands 17 bulbs at once) neither acknowledges nor changes; before, the command
+-- was then lost and the bulb's state only showed at the next poll, up to 30 s later (17-11-2026: that
+-- late report turned the outside lights zone Manual after almost every routine). Commands of one bulb run
+-- one after another, so a later command simply waits its turn.
+local RETRY_WAITS = { 1, 2, 4 }
 local function send(driver, dev, msg_type, payload, expect)
-  local ip, mac = address(dev), mac_of(dev)
-  if not ip then rescan(driver, true); ip = address(dev) end
-  if not ip then mark_fail(driver, dev, "no address"); return false end
-  local ack = lifx.request(ip, mac, msg_type, payload, lifx.T.Acknowledgement)
-  if not ack then
-    log.warn(string.format("[lifx] %s: command %d not acknowledged by %s", dev.label, msg_type, ip))
-  end
+  local mac = mac_of(dev)
+  if not address(dev) then rescan(driver, true) end
+  if not address(dev) then mark_fail(driver, dev, "no address"); return false end
   local dur = math.min(pref(dev, "transitionMs", 0), 3000) / 1000
-  cosock.socket.sleep(0.3 + dur)
-  local st = read(driver, dev)
-  if st and expect and not expect(st) then
-    cosock.socket.sleep(0.7)
-    st = read(driver, dev)
-    if st and not expect(st) then
-      log.warn(string.format("[lifx] %s: command %d acknowledged but not applied (yet)", dev.label, msg_type))
+  local acked, done = false, false
+  for try = 1, #RETRY_WAITS + 1 do
+    local ip = address(dev) -- a rescan after a failure may have found the bulb at a new address
+    acked = ip ~= nil and lifx.request(ip, mac, msg_type, payload, lifx.T.Acknowledgement) ~= nil
+    cosock.socket.sleep(0.3 + dur)
+    local st = read(driver, dev)
+    if st and expect and not expect(st) then
+      cosock.socket.sleep(0.7)
+      st = read(driver, dev)
     end
+    done = st ~= nil and (not expect or expect(st))
+    if done then
+      if try > 1 then log.info(string.format("[lifx] %s: command %d done at try %d", dev.label, msg_type, try)) end
+      break
+    end
+    log.warn(string.format("[lifx] %s: command %d %s (try %d of %d)", dev.label, msg_type,
+      st and (acked and "acknowledged but not applied" or "not acknowledged and not applied") or "not answered",
+      try, #RETRY_WAITS + 1))
+    if try <= #RETRY_WAITS then cosock.socket.sleep(RETRY_WAITS[try]) end
   end
-  return ack ~= nil and st ~= nil
+  return done
 end
 
 local function current(driver, dev)
@@ -357,6 +372,7 @@ local driver = Driver("stoeckie-lifx-local", {
       [capabilities.refresh.commands.refresh.NAME] = handle_refresh,
     },
   },
+  _lifx = { poll = function(driver, dev) return read(driver, dev) end }, -- for tests
 })
 
 log.info("[lifx] LIFX (local) driver starting, build " .. BUILD)
